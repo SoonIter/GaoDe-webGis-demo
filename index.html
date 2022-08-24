@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1.0 user-scalable=no, width=device-width"
+    />
+    <link
+      rel="stylesheet"
+      href="https://a.amap.com/jsapi_demos/static/demo-center/css/demo-center.css"
+    />
+    <title>Title</title>
+    <!--1/引入高德api-->
+    <script type="text/javascript">
+      window._AMapSecurityConfig = {
+        securityJsCode: '61e9c37fe8e94cc50ea0d87e6261f412',
+      };
+    </script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script
+      type="text/javascript"
+      src="https://webapi.amap.com/maps?v=2.0&key=9431822bc91ea97bf5ac21024128f599"
+    ></script>
+    <link
+      rel="stylesheet"
+      href="https://a.amap.com/jsapi_demos/static/demo-center/css/demo-center.css"
+    />
+    <script type="module" src="./js/storage.js"></script>
+    <!--3/设置容器宽高     html,body和容器都是100%-->
+    <style>
+      html,
+      body,
+      #container {
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!--实时路况按钮-->
+    <!--onclick事件，点击按钮调用add方法-->
+    <button id="show-now">显示实时路况</button>
+    <button id="hide-now">隐藏实时路况</button>
+    <!--2/创建地图容器-->
+    <div id="container"></div>
+    <div class="input-card" style="width: 10rem">
+      <h4>推荐参观路线</h4>
+      <div class="input-item">
+        <button class="btn" onclick="startAnimation()">开始动画</button>
+      </div>
+    </div>
+    <!--4/加载地图-->
+    <script type="module">
+      import { getMessage } from './js/service/getMessage.js';
+      import { handleMessage } from './js/service/handleMessage.js';
+      import { test } from './js/service/test.js';
+      test();
+
+      //通过Map构造函数创建对象map，将创建出来的容器与地图关联起来
+      //声明变量
+      let map = new AMap.Map('container', {
+        center: [117.13881, 34.21684], //设置地图中心点经纬度
+        zoom: 17, //地图缩放比例
+        viewMode: '3D', //3D显示
+        pitch: 45,
+        mapStyle: 'amap://styles/fresh',
+      });
+
+      //三、实时路况----创建一个路况图层，再将图层添加到底图上
+      //声明变量
+      let traffic = new AMap.TileLayer.Traffic({
+        autoRefresh: true, //是否自动刷新，默认为false
+        interval: 180, //刷新间隔，默认180s
+      });
+
+      //声明一个函数
+      document.querySelector('#show-now').addEventListener('click', () => {
+        map.add(traffic);
+      });
+      document.querySelector('#hide-now').addEventListener('click', () => {
+        map.remove(traffic);
+      });
+      window.startAnimation = startAnimation;
+      /* function add() {
+      map.add(traffic)//add方法添加图层，remove方法移除
+    }
+
+    function remove() {
+      map.remove(traffic)
+    } */
+
+      //四、添加工具条
+      //1使用plugin（插件）
+      AMap.plugin(
+        [
+          'AMap.ToolBar',
+          'AMap.Scale',
+          'AMap.HawkEye',
+          'AMap.MapType',
+          'AMap.ControlBar',
+          'AMap.GeoJSON',
+          'AMap.MoveAnimation',
+        ],
+        function () {
+          //2添加控件
+          // ToolBar(工具条)：集成了缩放、平移、定位
+          let toolbar = new AMap.ToolBar();
+          map.addControl(toolbar);
+          //Scale(比例尺)：展示地图在当前层级和经纬度下的比例
+          map.addControl(new AMap.Scale());
+          //HawkEye(鹰眼)：右下角缩略图
+          //map.addControl(new AMap.HawkEye());
+          //地图类型
+          map.addControl(new AMap.MapType());
+          //转盘
+          map.addControl(new AMap.ControlBar());
+        },
+      );
+
+      /*
+        //五.监听地图的点击事件(后台获取经纬度)
+        map.on('click', function(event) {
+            // console.log(event)
+            console.log(`经度: ${event.lnglat.lng},纬度: ${event.lnglat.lat}`)
+        });
+    */
+      //六、基于经纬度绘制点
+      //添加点
+      //1.创建一个点对象Marker
+      let marker = new AMap.CircleMarker({
+        radius: 10,
+        center: new AMap.LngLat(117.13998, 34.20758), // 经纬度对象，也可以是经纬度构成的一维数组[116.39, 39.9]
+        title: '中国矿业大学南门',
+      });
+      //2.添加到地图
+      map.add(marker);
+      let marker1 = new AMap.CircleMarker({
+        radius: 10,
+        center: new AMap.LngLat(117.15015, 34.22003), // 经纬度对象，也可以是经纬度构成的一维数组[116.39, 39.9]
+        title: '中国矿业大学北门',
+      });
+      //2.添加到地图
+      map.add(marker1);
+
+      /////////////////////////////////////////////////////////////
+      //定义一个全局变量，保存geojson
+      let geojson = new AMap.GeoJSON({
+        geojson: null,
+      });
+
+      (async () => {
+        let data = await getMessage();
+        if (data !== '') {
+          data = JSON.parse(data);
+          //导入数据
+          geojson.importData(data);
+          //恢复旧数据的点击事件
+          geojson.eachOverlay(function (item) {
+            item.on('click', function (e) {
+              // console.log('旧的数据点击了')
+              let ext = item.getExtData();
+              let click = ++ext._geoJsonProperties.click;
+              //console.log('点击了'+click+'次')
+
+              //使用消息提示框显示
+              let infowindow = new AMap.InfoWindow({
+                anchor: 'top-center', //锚点 定位
+                content: `<div>打卡了${click}次</div>`, //模板字符串
+              });
+              //显示 打开地图窗口
+              infowindow.open(map, item.getPosition());
+              handleMessage(geojson.toGeoJSON());
+              // saveData()////////保存到数据库
+            });
+          });
+        }
+      })();
+
+      map.add(geojson);
+      //console.log(geojson)
+      //交互式绘制点
+      //后台获取鼠标点的经纬度
+      //////////////////////////////////////////////////////
+      map.on('click', function (e) {
+        //1.创建一个点对象Marker
+
+        let marker = new AMap.Marker({
+          position: e.lnglat, //根据鼠标点击的点传过来的经纬度绘制点
+          //构造自定义属性
+          extData: {
+            _geoJsonProperties: {
+              gid: geojson.getOverlays().length + 1,
+              click: 0,
+            },
+          },
+        });
+
+        //2.添加到地图
+        //map.add(marker)
+
+        //使用覆盖物的点击事件
+        marker.on('click', function (e) {
+          // console.log(e.lnglat,'点击了')
+          //让点击的marker对象的click属性+1
+          let ext = marker.getExtData();
+          let click = ++ext._geoJsonProperties.click;
+          //console.log('点击了'+click+'次')
+
+          //使用消息提示框显示
+          let infowindow = new AMap.InfoWindow({
+            anchor: 'top-center', //锚点 定位
+            content: `<div>打卡了${click}次</div>`, //模板字符串
+          });
+          //显示 打开地图窗口
+          infowindow.open(map, marker.getPosition());
+
+          handleMessage(geojson.toGeoJSON());
+          // saveData(geojson.toGeoJSON())////////保存到数据库
+        });
+
+        //通过geojson对象来管理覆盖物
+        geojson.addOverlay(marker);
+        //console.log(geojson)
+        //保存数据(将geojson对象转换成标准的GeoJSON格式对象)
+        handleMessage(geojson.toGeoJSON());
+        // saveData(geojson.toGeoJSON())
+      });
+      //////////////////////////////////////////////////////
+      /*
+        //七、绘制折线
+        // 折线的节点坐标数组，每个元素为 AMap.LngLat 对象
+        let path = [
+            new AMap.LngLat(120.125205,35.999704),
+            new AMap.LngLat(120.126215,35.998714),
+            new AMap.LngLat(120.127225,35.999704),
+            new AMap.LngLat(120.128235,35.998714)
+        ];
+        // 创建折线
+        let polyline = new AMap.Polyline({
+            path: path,
+            borderWeight: 2, // 线条宽度，默认为 1
+            strokeColor: 'red', // 线条颜色
+            lineJoin: 'round' // 折线拐点连接处样式
+        });
+        // 将折线添加至地图实例
+        map.add(polyline);
+    */
+      //八、测量距离
+      //1.创建两个点（设置可以拖动）
+      let m1 = new AMap.Marker({
+        map: map, //将m1这个点添加到map地图中
+        draggable: true, //可以拖动
+        position: new AMap.LngLat(117.13998, 34.20758),
+      });
+      let m2 = new AMap.Marker({
+        map: map, //将m1这个点添加到map地图中
+        draggable: true, //可以拖动
+        position: new AMap.LngLat(117.15015, 34.22003),
+      });
+      //让地图根据覆盖物调整地图显示区域
+      map.setFitView();
+
+      //2.准备一条线
+      let line = new AMap.Polyline({
+        strokeColor: '#80d8ff', //描边的颜色
+        isOutline: true, //是否包含轮廓
+        outerlineColor: 'white',
+      });
+      line.setMap(map); //设置到地图上（还没显示）
+
+      //3.准备文本
+      let text = new AMap.Text({
+        text: '',
+        style: {
+          'background-color': '#29b6f6',
+          'border-color': '#e1f5fe',
+          'font-size': '16px',
+        },
+      });
+      text.setMap(map); //设置到地图上（还没显示）
+
+      //4.计算
+      function compute() {
+        //得到m1和m2的经纬度
+        let p1 = m1.getPosition();
+        let p2 = m2.getPosition();
+
+        //希望文本显示在中间
+        let textPos = p1.divideBy(2).add(p2.divideBy(2));
+        let distance = Math.round(p1.distance(p2)); //p1到p2的距离取整
+        let path = [p1, p2];
+        line.setPath(path); //绘制线
+
+        text.setText('距离为' + distance + '米');
+        text.setPosition(textPos); //计算出来的经纬度坐标
+      }
+
+      compute();
+      m1.on('dragging', compute); //拖动后重新计算
+      m2.on('dragging', compute);
+
+      //动画函数
+      function startAnimation() {
+        console.log('开始动画');
+        //实现路径规划（导航）
+        AMap.plugin('AMap.Driving', function () {
+          let driving = new AMap.Driving({
+            map: map,
+            //驾车策略
+            policy: AMap.DrivingPolicy.LEAST_TIME, //耗时最少
+          });
+          //设置起点和终点
+          let start = new AMap.LngLat(117.13998, 34.20758);
+          let end = new AMap.LngLat(117.15015, 34.22003);
+
+          //通过geojson得到每一个点的坐标
+          let opts = {
+            //数组，把所有点都加到数组里
+            waypoints: [],
+          };
+          geojson.eachOverlay(function (item) {
+            //console.log(item)
+            opts.waypoints.push(item.getPosition()); //得到每个点的坐标，传到数组里
+          });
+
+          driving.search(start, end, opts, function (status, result) {
+            if (status === 'complete') {
+              //绘制成功
+              //实现轨迹模拟
+              console.log(result); //规划出来的路径
+
+              let lineArr = []; //路径点的数组
+              result.routes[0].steps.forEach(function (item) {
+                lineArr.push(...item.path);
+              }); //将点添加到数组
+
+              //小车
+              let marker = new AMap.Marker({
+                map: map,
+                position: start,
+                icon: 'http://webapi.amap.com/images/car.png',
+                offset: new AMap.Pixel(-26, -13), //偏移量
+                autoRotation: true,
+                angle: 1000, //图片旋转角度
+              });
+              marker.setAngle(1000);
+              //途径路线
+              let passedPolyline = new AMap.Polyline({
+                map: map,
+                strokeColor: '#AF5', //线的颜色
+                strokeWeight: 6, //线宽
+              });
+              //回调函数，
+              marker.on('moving', function (e) {
+                // console.log(e)
+                passedPolyline.setPath(e.passedPath);
+              });
+              map.setFitView();
+              //每隔一段时间移动
+              marker.moveAlong(lineArr, {
+                duration: 500, //多少毫秒更新
+                autoRotation: true, //自动调整车的方向
+                angle: 1000, //图片旋转角度
+              });
+            } else {
+              //绘制不成功
+              console.log('error');
+            }
+          });
+        });
+      }
+    </script>
+  </body>
+</html>
